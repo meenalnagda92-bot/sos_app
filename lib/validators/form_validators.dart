@@ -24,6 +24,10 @@ class FormValidators {
     return null;
   }
 
+  static String? loginPassword(String? value) {
+    return required(value, field: 'Password');
+  }
+
   static String? password(String? value) {
     final requiredError = required(value, field: 'Password');
     if (requiredError != null) return requiredError;

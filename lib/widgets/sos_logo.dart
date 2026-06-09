@@ -18,7 +18,7 @@ class SosLogo extends StatelessWidget {
             borderRadius: BorderRadius.circular(size * 0.28),
             boxShadow: [
               BoxShadow(
-                color: AppTheme.primary.withValues(alpha: 0.35),
+                color: AppTheme.primary.withOpacity(0.35),
                 blurRadius: 16,
                 offset: const Offset(0, 6),
               ),

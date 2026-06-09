@@ -1,4 +1,11 @@
+import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:sos_app/screens/homescreen.dart';
 import 'package:sos_app/validators/form_validators.dart';
 import 'package:sos_app/widgets/auth_scaffold.dart';
 import 'package:sos_app/widgets/auth_text_field.dart';
@@ -18,9 +25,14 @@ class _SignupScreenState extends State<SignupScreen> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   bool _acceptedTerms = false;
+  bool _isLoading = false;
+  
+  XFile? _imageFile;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void dispose() {
@@ -32,6 +44,13 @@ class _SignupScreenState extends State<SignupScreen> {
     super.dispose();
   }
 
+  Future<void> _pickImage() async {
+    final XFile? selected = await _picker.pickImage(source: ImageSource.gallery);
+    if (selected != null) {
+      setState(() => _imageFile = selected);
+    }
+  }
+
   String? _termsValidator(bool? _) {
     if (!_acceptedTerms) {
       return 'You must accept the terms and conditions';
@@ -39,16 +58,76 @@ class _SignupScreenState extends State<SignupScreen> {
     return null;
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final formValid = _formKey.currentState?.validate() ?? false;
     if (!formValid) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Sign up form is valid (UI only)'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    setState(() => _isLoading = true);
+    try {
+      // 1. Create User
+      UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+      
+      String? photoUrl;
+      
+      // 2. Upload Image to Firebase Storage if selected
+      if (_imageFile != null) {
+        final storageRef = FirebaseStorage.instance
+            .ref()
+            .child('user_profiles')
+            .child('${userCredential.user!.uid}.jpg');
+            
+        if (kIsWeb) {
+          await storageRef.putData(await _imageFile!.readAsBytes());
+        } else {
+          await storageRef.putFile(File(_imageFile!.path));
+        }
+        photoUrl = await storageRef.getDownloadURL();
+      }
+
+      // 3. Update Auth Profile
+      await userCredential.user?.updateDisplayName(_nameController.text.trim());
+      if (photoUrl != null) {
+        await userCredential.user?.updatePhotoURL(photoUrl);
+      }
+
+      // 4. Save User Details to Firestore
+      await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
+        'uid': userCredential.user!.uid,
+        'name': _nameController.text.trim(),
+        'email': _emailController.text.trim(),
+        'phone': _phoneController.text.trim(),
+        'photoUrl': photoUrl,
+        'createdAt': FieldValue.serverTimestamp(),
+        'emergencyContacts': [], // Initialize empty
+      });
+
+      // Navigation is handled by authStateChanges in main.dart
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message ?? 'Registration failed'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } catch (e) {
+       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('An error occurred: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -62,20 +141,40 @@ class _SignupScreenState extends State<SignupScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 8),
-            const Center(child: SosLogo(size: 56)),
+            Center(
+              child: Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 50,
+                    backgroundColor: Colors.grey.shade200,
+                    backgroundImage: _imageFile != null 
+                      ? (kIsWeb ? NetworkImage(_imageFile!.path) : FileImage(File(_imageFile!.path)) as ImageProvider)
+                      : null,
+                    child: _imageFile == null ? const Icon(Icons.person, size: 50, color: Colors.grey) : null,
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: GestureDetector(
+                      onTap: _pickImage,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).primaryColor,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 24),
             Text(
               'Create account',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Join SOS for quick emergency assistance',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.grey.shade600,
               ),
               textAlign: TextAlign.center,
             ),
@@ -102,7 +201,7 @@ class _SignupScreenState extends State<SignupScreen> {
             const SizedBox(height: 16),
             AuthTextField(
               controller: _phoneController,
-              label: 'Phone (optional)',
+              label: 'Phone',
               hint: '+1 555 123 4567',
               keyboardType: TextInputType.phone,
               prefixIcon: Icons.phone_outlined,
@@ -202,8 +301,17 @@ class _SignupScreenState extends State<SignupScreen> {
             ),
             const SizedBox(height: 20),
             ElevatedButton(
-              onPressed: _submit,
-              child: const Text('Create Account'),
+              onPressed: _isLoading ? null : _submit,
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Create Account'),
             ),
             const SizedBox(height: 16),
             Row(

@@ -89,11 +89,11 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
+            VALUE "CompanyName", "com.sosapp" "\0"
             VALUE "FileDescription", "sos_app" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "sos_app" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.sosapp. All rights reserved." "\0"
             VALUE "OriginalFilename", "sos_app.exe" "\0"
             VALUE "ProductName", "sos_app" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
